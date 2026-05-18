@@ -10,10 +10,27 @@ import SwiftUI
 struct ContentView: View {
     var body: some View {
         VStack {
-            CardView()
+            CardView(
+                bgColor: Color(hex: "F4BB5C"),
+                textColor: Color(hex: "B44200")
+            )
+            CardView(
+                bgColor: Color(hex: "0059BC"),
+                textColor: Color(hex: "FFF")
+            )
+            CardView(
+                bgColor: Color(hex: "E05D2D"),
+                textColor: Color(hex: "FFF")
+            )
         }
         .padding()
     }
+}
+
+
+struct CardState {
+    var offset: CGPoint = .zero
+    var isExpanded: Bool = false
 }
 
 struct CardView: View {
@@ -24,11 +41,14 @@ struct CardView: View {
 
     let collapsedSize = CGSize(width: 354, height: 102)
     let expandedSize = CGSize(width: 354, height: 532)
+    
+    let bgColor: Color
+    let textColor: Color
 
     var body: some View {
         ZStack(alignment: .top) {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(hex: "#0059BC"))
+                .fill(bgColor)
                 .frame(width: currentSize.width, height: currentSize.height)
                 /// We overlay content on TO the shape, instead of embedding it INSIDE a Stack and setting the background property to define the shape, to play better with MatchedGeometryEffect to get a more fluid transition/animation between sizes.
                 .overlay(alignment: .topLeading) {
@@ -46,7 +66,7 @@ struct CardView: View {
                                             weight: .medium
                                         )
                                     )
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(textColor)
                                     .animation(
                                         .smooth(),
                                         value: isExpanded
@@ -59,7 +79,7 @@ struct CardView: View {
                                     Text("Today \n2:00 PM")
                                         .font(.system(size: 17, weight: .medium))
                                         .fixedSize()
-                                        .foregroundStyle(.white)
+                                        .foregroundStyle(textColor)
                                         .multilineTextAlignment(.trailing)
                                         .matchedGeometryEffect(id: "date", in: namespace)
                                 }
@@ -71,7 +91,7 @@ struct CardView: View {
                                 Text("Today at 2:00 PM")
                                     .font(.system(size: 17, weight: .medium))
                                     .fixedSize()
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(textColor)
                                     .matchedGeometryEffect(
                                         id: "date",
                                         in: namespace
@@ -92,23 +112,23 @@ struct CardView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Agenda")
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(.white.opacity(0.6))
+                                    .foregroundStyle(textColor.opacity(0.6))
                                 
                                 
                                 Text("Discuss about the north star ver. of our current product")
                                     .font(.system(size: 16, weight: .regular))
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(textColor)
                             }
                             
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Participants")
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(.white.opacity(0.6))
+                                    .foregroundStyle(textColor.opacity(0.6))
                                 
                                 
                                 Text("John Lee, Jane Doe, Amanda Le, Tony Muller")
                                     .font(.system(size: 16, weight: .regular))
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(textColor)
                             }
                         }
                     }
