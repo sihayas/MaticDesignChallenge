@@ -124,7 +124,7 @@ struct CardView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            Rectangle()
                 .fill(Color(hex: card.bgColor))
                 .frame(width: currentSize.width, height: currentSize.height)
                 /// We overlay content ONTO the shape, instead of embedding it INSIDE a Stack and setting the background property to define the shape, to play better with MatchedGeometryEffect to get a more fluid transition/animation between sizes.
@@ -229,6 +229,8 @@ struct CardView: View {
                     )
                     .padding(24)
                 }
+                /// Clip to get the desired shape to prevent overlay content overflowing
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .onChange(of: isExpanded) { _, nV in
                     withAnimation(.smooth()) {
                         currentSize = nV ? expandedSize : collapsedSize
@@ -236,7 +238,11 @@ struct CardView: View {
                 }
 
         }
+        .offset(dragOffset)
+        .scaleEffect(scaleEffect)
+        .rotationEffect(.degrees(rotationAngle))
         .gesture(
+            !isExpanded ?
             DragGesture(minimumDistance: 0)
                 .onChanged { _ in
                     withAnimation(.smooth()) {
@@ -247,20 +253,15 @@ struct CardView: View {
                     withAnimation(.smooth()) {
                         scaleEffect = 1
                     }
-                    /// Only trigger if finger lifted within the card bounds
                     let bounds = CGRect(origin: .zero, size: currentSize)
                     if bounds.contains(value.location) {
                         withAnimation(.smooth()) {
-                            /// Set orchestrator id to this card's, collapsing all others automatically
-                            orchestrator.activeCardId =
-                                isExpanded ? nil : card.id
+                            orchestrator.activeCardId = card.id
                         }
                     }
                 }
+            : nil
         )
-        .offset(dragOffset)
-        .scaleEffect(scaleEffect)
-        .rotationEffect(.degrees(rotationAngle))
         .simultaneousGesture(
             isExpanded ?
             DragGesture()
@@ -270,10 +271,17 @@ struct CardView: View {
                         rotationAngle = 4
                     }
                 }
-                .onEnded { _ in
+                .onEnded { value in
+                    /// predictedEndTranslation factors in velocity so a fast flick
+                    /// registers even if the actual translation wasn't huge
+                    let shouldCollapse = abs(value.predictedEndTranslation.height) > 120
+                        || abs(value.predictedEndTranslation.width) > 120
                     withAnimation(.smooth()) {
                         dragOffset = .zero
                         rotationAngle = 0
+                        if shouldCollapse {
+                            orchestrator.activeCardId = nil
+                        }
                     }
                 }
             : nil
