@@ -8,12 +8,13 @@
 import Foundation
 import SwiftUI
 
+
 struct Card {
-    var id: Int
-    var bgColor: String
-    var textColor: String
-    var title: String
-    var date: String
-    var agenda: String
-    var participants: [String]
+    let id: Int
+    let bgColor: String
+    let textColor: String
+    let title: String
+    let secondaryText: String
+    let agenda: String
+    let participants: [String]
 }

@@ -257,7 +257,7 @@ extension CardView {
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 
-                /// Reserve space for layout
+                /// Reserve space for layout shifting
                 collapsedDateView()
                     .opacity(0)
             }
