@@ -15,7 +15,7 @@ let cards: [Card] = [
         bgColor: "F4BB5C",
         textColor: "B44200",
         title: "Design Sync",
-        date: "Today at 2:00 PM",
+        date: "Today 2:00 PM",
         agenda: "Discuss about the north star ver. of our current product",
         participants: ["John Lee", "Jane Doe", "Amanda Le", "Tony Muller"]
     ),
@@ -24,7 +24,7 @@ let cards: [Card] = [
         bgColor: "0059BC",
         textColor: "FFFFFF",
         title: "Design Sync",
-        date: "Today at 2:00 PM",
+        date: "Today 2:00 PM",
         agenda: "Discuss about the north star ver. of our current product",
         participants: ["John Lee", "Jane Doe", "Amanda Le", "Tony Muller"]
     ),
@@ -33,7 +33,7 @@ let cards: [Card] = [
         bgColor: "E05D2D",
         textColor: "FFFFFF",
         title: "Design Sync",
-        date: "Today at 2:00 PM",
+        date: "Today 2:00 PM",
         agenda: "Discuss about the north star ver. of our current product",
         participants: ["John Lee", "Jane Doe", "Amanda Le", "Tony Muller"]
     ),
@@ -46,43 +46,6 @@ struct ContainerProperties {
     var containerSize: CGSize = .zero
     var safeArea: EdgeInsets = .init()
     var minY: CGFloat = 0
-}
-
-// MARK: - Text Styles
-
-/// Applies the card label style, small semibold text at reduced opacity, used for
-/// field labels like "Agenda" and "Participants".
-struct CardLabelStyle: ViewModifier {
-    let color: Color
-
-    func body(content: Content) -> some View {
-        content
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(color.opacity(0.6))
-    }
-}
-
-/// Applies the card body style, regular text at full opacity, used for field values.
-struct CardBodyStyle: ViewModifier {
-    let color: Color
-
-    func body(content: Content) -> some View {
-        content
-            .font(.system(size: 16, weight: .regular))
-            .foregroundStyle(color)
-    }
-}
-
-extension View {
-    /// Styles text as a card field label (12pt semibold, muted).
-    func cardLabelStyle(color: Color) -> some View {
-        modifier(CardLabelStyle(color: color))
-    }
-
-    /// Styles text as a card field value (16pt regular, full opacity).
-    func cardBodyStyle(color: Color) -> some View {
-        modifier(CardBodyStyle(color: color))
-    }
 }
 
 // MARK: - ContentView
@@ -106,6 +69,7 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity)
             }
             .defaultScrollAnchor(.center)
+
             /// Tracks scroll position in content space (offset + insets). Cheaper than a proxy-based read.
             .onScrollGeometryChange(for: CGFloat.self) {
                 $0.contentOffset.y + $0.contentInsets.top
@@ -120,6 +84,7 @@ struct ContentView: View {
                 properties.minY = newValue - properties.safeArea.top
             }
         }
+
         /// Container size (NavigationStack bounds). Required for push-down animation math.
         .onGeometryChange(for: CGSize.self) {
             $0.size
@@ -155,6 +120,7 @@ struct CardView: View {
     private let collapsedSize: CGSize = CGSize(width: 354, height: 102)
     private let expandedSize: CGSize = CGSize(width: 354, height: 532)
     private let cardPadding: CGFloat = 24
+    private let cardSpacing: CGFloat = 24
 
     // MARK: Derived Properties
 
@@ -188,6 +154,7 @@ struct CardView: View {
         .rotationEffect(.degrees(rotationAngle))
         .gesture(collapseGesture)
         .simultaneousGesture(expandedDragGesture)
+
         /// Primary card stacking logic
         .visualEffect {
             [
@@ -256,12 +223,13 @@ extension CardView {
 
     // MARK: Card Content
 
-    /// Outer container that owns each individual section.
+    /// Overlay content container that owns each individual section.
     private var cardContent: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            titlebarSection
+        VStack(alignment: .leading, spacing: cardSpacing) {
+            titlebarSection()
+
             if isExpanded {
-                detailSection
+                detailSection()
             }
         }
         .padding(cardPadding)
@@ -270,67 +238,51 @@ extension CardView {
             height: expandedSize.height,
             alignment: .topLeading
         )
-
     }
 
     // MARK: Titlebar Section
 
-    private var titlebarSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            /// Top/Title
-            ///
-            HStack(alignment: .top) {
-                /// BUG: Using the title property directly does not work well with text animations for some reason. Use hardcoded string for now to accomdate a working animation.
-                Text("Design \(isExpanded ? "\nSync" : "Sync")")
-                    .font(.system(size: isExpanded ? 36 : 24, weight: .medium))
-                    .foregroundStyle(Color(hex: card.textColor))
-                    .multilineTextAlignment(.leading)
-                    .frame(
-                        maxWidth: isExpanded ? 160 : .infinity,
-                        alignment: .leading
-                    )
-                    .animation(.smooth(), value: isExpanded)
-
-                Spacer()
-
-                /// MatchedGeometry here & date moves to top-right when expanded
-                if isExpanded {
-                    Text(card.date.replacingOccurrences(of: " at ", with: "\n"))
-                        .font(.system(size: 17, weight: .medium))
-                        .fixedSize()
-                        .foregroundStyle(Color(hex: card.textColor))
-                        .multilineTextAlignment(.trailing)
-                        .matchedGeometryEffect(id: "date", in: namespace)
+    @ViewBuilder
+    private func titlebarSection() -> some View {
+        ZStack(alignment: isExpanded ? .topTrailing : .bottomLeading) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .top) {
+                    titleView()
+                    
+                    Spacer()
+                    
+                    /// Reserve space for layout
+                    expandedDateView()
+                        .opacity(0)
                 }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                
+                /// Reserve space for layout
+                collapsedDateView()
+                    .opacity(0)
             }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-
-            /// Bottom / Date
-            ///
-            /// We remove the date view when expanding so MatchedGeometry knows to animate
-            /// and transition it towards the top right.
-            if !isExpanded {
-                Text(card.date)
-                    .font(.system(size: 17, weight: .medium))
-                    .fixedSize()
-                    .foregroundStyle(Color(hex: card.textColor))
-                    .matchedGeometryEffect(id: "date", in: namespace)
-            }
+            
+            Text("Today \(isExpanded ? "\n2:00 PM" : "2:00 PM")")
+                .font(.system(size: 17, weight: .medium))
+                .fixedSize()
+                .foregroundStyle(Color(hex: card.textColor))
+                .multilineTextAlignment(.trailing)
         }
-        /// The frame *needs* to have a minHeight or else MatchedGeometryEffect cannot reserve space for the target transition on expansion.
-        .frame(minHeight: 72, alignment: .topLeading)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity)
+//        .border(.red)
     }
 
     // MARK: Detail Section
 
-    private var detailSection: some View {
+    @ViewBuilder
+    private func detailSection() -> some View {
         VStack(alignment: .leading, spacing: 24) {
             Rectangle()
                 .fill(.black.opacity(0.35))
                 .frame(height: 1)
 
             detailRow(title: "Agenda", text: card.agenda)
+
             detailRow(
                 title: "Participants",
                 text: card.participants.joined(separator: ", ")
@@ -342,14 +294,46 @@ extension CardView {
             alignment: .topLeading
         )
     }
-    
-    
-    // MARK: ViewBuilder's
+
+    // MARK: Leaf Views
+
+    @ViewBuilder
+    private func titleView() -> some View {
+        Text("Design \(isExpanded ? "\nSync" : "Sync")")
+            .font(.system(size: isExpanded ? 36 : 24, weight: .medium))
+            .foregroundStyle(Color(hex: card.textColor))
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: isExpanded ? 160 : .infinity, alignment: .leading)
+            .animation(.smooth(), value: isExpanded)
+    }
+
+    @ViewBuilder
+    private func expandedDateView() -> some View {
+        if isExpanded {
+            Text(card.date.replacingOccurrences(of: " at ", with: "\n"))
+                .font(.system(size: 17, weight: .medium))
+                .fixedSize()
+                .foregroundStyle(Color(hex: card.textColor))
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
+    @ViewBuilder
+    private func collapsedDateView() -> some View {
+        if !isExpanded {
+            Text(card.date)
+                .font(.system(size: 17, weight: .medium))
+                .fixedSize()
+                .foregroundStyle(Color(hex: card.textColor))
+        }
+    }
+
     @ViewBuilder
     private func detailRow(title: String, text: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .cardLabelStyle(color: Color(hex: card.textColor))
+
             Text(text)
                 .cardBodyStyle(color: Color(hex: card.textColor))
         }
@@ -357,10 +341,6 @@ extension CardView {
 
     // MARK: Gestures
 
-    /// Tap-and-hold scale-down gesture for collapsed cards.
-    /// Pressing scales to 0.92; lifting inside the card bounds triggers expansion.
-    /// `Optional` conditionally conforms to `Gesture`, so the ternary returning `nil`
-    /// is the correct way to disable a gesture — not type-erasure or a separate type.
     private var collapseGesture: some Gesture {
         !isExpanded
             ? DragGesture(minimumDistance: 0)
@@ -369,9 +349,6 @@ extension CardView {
             : nil
     }
 
-    /// Drag-to-dismiss gesture for the expanded card.
-    /// `predictedEndTranslation` factors in velocity so a fast flick
-    /// registers even if the actual translation wasn't huge.
     private var expandedDragGesture: some Gesture {
         isExpanded
             ? DragGesture()
@@ -382,14 +359,10 @@ extension CardView {
 
     // MARK: Gesture Handlers
 
-    /// Scales the card down while the user is pressing, giving tactile press feedback.
     private func collapseGestureChanged() {
         withAnimation(.smooth()) { scaleEffect = 0.92 }
     }
 
-    /// Restores scale and expands the card if the finger lifted within its bounds.
-    /// Lifting outside the bounds (i.e. a drag-off) cancels the interaction without expanding.
-    /// - Parameter value: The final drag value, used to check the lift location.
     private func collapseGestureEnded(_ value: DragGesture.Value) {
         withAnimation(.smooth()) { scaleEffect = 1 }
         let bounds = CGRect(origin: .zero, size: currentSize)
@@ -398,9 +371,6 @@ extension CardView {
         }
     }
 
-    /// Tracks the drag translation and applies a fixed rotation to suggest the card
-    /// is being physically picked up and moved.
-    /// - Parameter value: The in-flight drag value containing the current translation.
     private func expandedDragChanged(_ value: DragGesture.Value) {
         withAnimation(.interactiveSpring()) {
             dragOffset = value.translation
@@ -408,21 +378,49 @@ extension CardView {
         }
     }
 
-    /// Collapses the card if the gesture ended with enough velocity or distance,
-    /// otherwise snaps it back to center. Uses `predictedEndTranslation` rather than
-    /// raw translation so a fast flick registers even if the finger didn't travel far.
-    /// - Parameter value: The final drag value containing predicted end translation.
     private func expandedDragEnded(_ value: DragGesture.Value) {
         let shouldCollapse =
             abs(value.predictedEndTranslation.height) > 120
             || abs(value.predictedEndTranslation.width) > 120
+
         withAnimation(.smooth()) {
             dragOffset = .zero
             rotationAngle = 0
             if shouldCollapse { activeCardId = nil }
         }
     }
+}
 
+// MARK: - Text Styles
+
+struct CardLabelStyle: ViewModifier {
+    let color: Color
+
+    func body(content: Content) -> some View {
+        content
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(color.opacity(0.6))
+    }
+}
+
+struct CardBodyStyle: ViewModifier {
+    let color: Color
+
+    func body(content: Content) -> some View {
+        content
+            .font(.system(size: 16, weight: .regular))
+            .foregroundStyle(color)
+    }
+}
+
+extension View {
+    func cardLabelStyle(color: Color) -> some View {
+        modifier(CardLabelStyle(color: color))
+    }
+
+    func cardBodyStyle(color: Color) -> some View {
+        modifier(CardBodyStyle(color: color))
+    }
 }
 
 // MARK: - Preview
