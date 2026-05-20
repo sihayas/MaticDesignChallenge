@@ -69,6 +69,7 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity)
             }
             .defaultScrollAnchor(.center)
+            .scrollDisabled(true)
 
             /// Tracks scroll position in content space (offset + insets). Cheaper than a proxy-based read.
             .onScrollGeometryChange(for: CGFloat.self) {
@@ -186,6 +187,8 @@ struct CardView: View {
                     yOffset += targetMidY - rect.midY
                 }
             }
+            
+            print("x: \(xOffset), y: \(yOffset)")
 
             /// Apply the single combined transform.
             return content.offset(x: xOffset, y: yOffset)
@@ -313,13 +316,11 @@ extension CardView {
     
     @ViewBuilder
     private func animatedDateView() -> some View {
-        // Safely splits "Today 2:00 PM" into "Today" and "2:00 PM"
-        // Replace `card.dateString` with whatever your dynamic property is named
         let parts = card.subTitle.components(separatedBy: " ")
         let dayText = parts.first ?? ""
         let timeText = parts.dropFirst().joined(separator: " ")
         
-        // Expanded: Stacked vertically, right-aligned. Collapsed: Side-by-side.
+        /// Expanded: Stacked vertically, right-aligned. Collapsed: Side-by-side.
         let layout = isExpanded
             ? AnyLayout(VStackLayout(alignment: .trailing, spacing: 0))
             : AnyLayout(HStackLayout(spacing: 4))
@@ -381,7 +382,8 @@ extension CardView {
 
     private var expandedDragGesture: some Gesture {
         isExpanded
-            ? DragGesture()
+        /// Tell the gesture to calculate its translation relative to the device screen, not the moving card. This  decouples the touch math from the view's rotation and bounding box changes.
+        ? DragGesture(coordinateSpace: .global)
                 .onChanged { value in expandedDragChanged(value) }
                 .onEnded { value in expandedDragEnded(value) }
             : nil
@@ -402,21 +404,45 @@ extension CardView {
     }
 
     private func expandedDragChanged(_ value: DragGesture.Value) {
-        withAnimation(.interactiveSpring()) {
-            dragOffset = value.translation
-            rotationAngle = 4
+        var rawTranslation = value.translation
+        
+        // 1. Apply increasing friction only when dragging UP (negative height)
+        if rawTranslation.height < 0 {
+            // The theoretical max distance the card could move upwards
+            let dragLimit: CGFloat = 150.0
+            
+            // Convert the negative drag into a positive number for the math
+            let upwardDrag = abs(rawTranslation.height)
+            
+            // Apply Apple's rubberband formula
+            let rubberbandedY = upwardDrag / (1 + (upwardDrag / dragLimit))
+            
+            // Re-apply the negative sign to move it up
+            rawTranslation.height = -rubberbandedY
+        }
+        
+        // 2. Update with a modern interactive spring
+        withAnimation(.interactiveSpring) {
+            dragOffset = rawTranslation
+            
+            if rotationAngle != 4 {
+                rotationAngle = 4
+            }
         }
     }
 
     private func expandedDragEnded(_ value: DragGesture.Value) {
-        let shouldCollapse =
-            abs(value.predictedEndTranslation.height) > 120
-            || abs(value.predictedEndTranslation.width) > 120
+        /// Only collapse if the user flicks or drags sufficiently downward (positive Y direction)
+        let shouldCollapse = value.predictedEndTranslation.height > 120
 
-        withAnimation(.smooth()) {
+        // Note: Use .spring() with parentheses for modern SwiftUI syntax
+        withAnimation(.spring) {
             dragOffset = .zero
             rotationAngle = 0
-            if shouldCollapse { activeCardId = nil }
+            
+            if shouldCollapse {
+                activeCardId = nil
+            }
         }
     }
 }
