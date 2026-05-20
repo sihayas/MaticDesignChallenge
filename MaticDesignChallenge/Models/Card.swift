@@ -12,4 +12,8 @@ struct Card {
     var id: Int
     var bgColor: String
     var textColor: String
+    var title: String
+    var date: String
+    var agenda: String
+    var participants: [String]
 }
