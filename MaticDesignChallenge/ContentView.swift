@@ -14,8 +14,8 @@ let cards: [Card] = [
         id: 0,
         bgColor: "F4BB5C",
         textColor: "B44200",
-        title: "Design Sync",
-        date: "Today 2:00 PM",
+        title: "Daily Focus",
+        subTitle: "3 Tasks Left",
         agenda: "Discuss about the north star ver. of our current product",
         participants: ["John Lee", "Jane Doe", "Amanda Le", "Tony Muller"]
     ),
@@ -24,7 +24,7 @@ let cards: [Card] = [
         bgColor: "0059BC",
         textColor: "FFFFFF",
         title: "Design Sync",
-        date: "Today 2:00 PM",
+        subTitle: "Today 2:00 PM",
         agenda: "Discuss about the north star ver. of our current product",
         participants: ["John Lee", "Jane Doe", "Amanda Le", "Tony Muller"]
     ),
@@ -32,8 +32,8 @@ let cards: [Card] = [
         id: 2,
         bgColor: "E05D2D",
         textColor: "FFFFFF",
-        title: "Design Sync",
-        date: "Today 2:00 PM",
+        title: "Inspiration",
+        subTitle: "12 New Items",
         agenda: "Discuss about the north star ver. of our current product",
         participants: ["John Lee", "Jane Doe", "Amanda Le", "Tony Muller"]
     ),
@@ -110,8 +110,6 @@ struct CardView: View {
     @State var scaleEffect = 1.0
     @State private var rotationAngle: Double = 0
     @State private var dragOffset: CGSize = .zero
-
-    @Namespace private var namespace
 
     let card: Card
     let properties: ContainerProperties
@@ -225,14 +223,13 @@ extension CardView {
 
     /// Overlay content container that owns each individual section.
     private var cardContent: some View {
-        VStack(alignment: .leading, spacing: cardSpacing) {
+        VStack(alignment: .leading, spacing: 0) {
             titlebarSection()
 
             if isExpanded {
                 detailSection()
             }
         }
-        .padding(cardPadding)
         .frame(
             width: expandedSize.width,
             height: expandedSize.height,
@@ -245,38 +242,23 @@ extension CardView {
     @ViewBuilder
     private func titlebarSection() -> some View {
         ZStack(alignment: isExpanded ? .topTrailing : .bottomLeading) {
-            VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .top) {
                     titleView()
-                    
-                    Spacer()
-                    
-                    /// Reserve space for layout
-                    expandedDateView()
-                        .opacity(0)
                 }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                
-                /// Reserve space for layout shifting
-                collapsedDateView()
-                    .opacity(0)
-            }
+                .frame(maxWidth: .infinity, maxHeight: isExpanded ? nil : 102, alignment: .topLeading)
             
-            Text("Today \(isExpanded ? "\n2:00 PM" : "2:00 PM")")
-                .font(.system(size: 17, weight: .medium))
-                .fixedSize()
-                .foregroundStyle(Color(hex: card.textColor))
-                .multilineTextAlignment(.trailing)
+            animatedDateView()
         }
+        .padding(cardPadding)
+        .frame(maxHeight: isExpanded ? nil : 102)
         .frame(maxWidth: .infinity)
-//        .border(.red)
     }
 
     // MARK: Detail Section
 
     @ViewBuilder
     private func detailSection() -> some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: cardSpacing) {
             Rectangle()
                 .fill(.black.opacity(0.35))
                 .frame(height: 1)
@@ -288,6 +270,7 @@ extension CardView {
                 text: card.participants.joined(separator: ", ")
             )
         }
+        .padding([.horizontal, .bottom], cardPadding)
         .frame(
             maxWidth: .infinity,
             maxHeight: .infinity,
@@ -299,18 +282,65 @@ extension CardView {
 
     @ViewBuilder
     private func titleView() -> some View {
-        Text("Design \(isExpanded ? "\nSync" : "Sync")")
-            .font(.system(size: isExpanded ? 36 : 24, weight: .medium))
-            .foregroundStyle(Color(hex: card.textColor))
-            .multilineTextAlignment(.leading)
-            .frame(maxWidth: isExpanded ? 160 : .infinity, alignment: .leading)
-            .animation(.smooth(), value: isExpanded)
+        let words = card.title.components(separatedBy: " ")
+        let firstWord = words.first ?? ""
+        let restOfTitle = words.dropFirst().joined(separator: " ")
+
+        /// Define the layout state: Horizontal when collapsed, Vertical when expanded
+        let layout = isExpanded
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0))
+            : AnyLayout(HStackLayout(spacing: 6)) // Adjust spacing to match standard space
+
+        layout {
+            Text(firstWord)
+            
+            if !restOfTitle.isEmpty {
+                Text(restOfTitle)
+            }
+        }
+        .font(
+            .system(
+                size: isExpanded ? 36 : 24,
+                weight: .medium
+            )
+        )
+        .foregroundStyle(Color(hex: card.textColor))
+        .animation(
+            .smooth(),
+            value: isExpanded
+        )
+    }
+    
+    @ViewBuilder
+    private func animatedDateView() -> some View {
+        // Safely splits "Today 2:00 PM" into "Today" and "2:00 PM"
+        // Replace `card.dateString` with whatever your dynamic property is named
+        let parts = card.subTitle.components(separatedBy: " ")
+        let dayText = parts.first ?? ""
+        let timeText = parts.dropFirst().joined(separator: " ")
+        
+        // Expanded: Stacked vertically, right-aligned. Collapsed: Side-by-side.
+        let layout = isExpanded
+            ? AnyLayout(VStackLayout(alignment: .trailing, spacing: 0))
+            : AnyLayout(HStackLayout(spacing: 4))
+            
+        layout {
+            Text(dayText)
+            
+            if !timeText.isEmpty {
+                Text(timeText)
+            }
+        }
+        .font(.system(size: 17, weight: .medium))
+        .fixedSize()
+        .foregroundStyle(Color(hex: card.textColor))
+        .animation(.smooth(), value: isExpanded)
     }
 
     @ViewBuilder
     private func expandedDateView() -> some View {
         if isExpanded {
-            Text(card.date.replacingOccurrences(of: " at ", with: "\n"))
+            Text(card.subTitle.replacingOccurrences(of: " at ", with: "\n"))
                 .font(.system(size: 17, weight: .medium))
                 .fixedSize()
                 .foregroundStyle(Color(hex: card.textColor))
@@ -321,7 +351,7 @@ extension CardView {
     @ViewBuilder
     private func collapsedDateView() -> some View {
         if !isExpanded {
-            Text(card.date)
+            Text(card.subTitle)
                 .font(.system(size: 17, weight: .medium))
                 .fixedSize()
                 .foregroundStyle(Color(hex: card.textColor))
