@@ -13,7 +13,6 @@ let cards: [Card] = [
     Card(id: 2, bgColor: "E05D2D", textColor: "FFFFFF"),
 ]
 
-/// We store the
 struct ContainerProperties {
     var scrollOffset: CGFloat = 0
     var containerSize: CGSize = .zero
@@ -21,18 +20,9 @@ struct ContainerProperties {
     var minY: CGFloat = 0
 }
 
-@Observable
-class CardOrchestrator {
-    /// All card's have access to this observable property, and react accordingly.
-    /// If the id matches the card's own, the card will expand, and all other cards will contract.
-    /// If there is an id but it is not the card's, the card will contract.
-    var activeCardId: Int?
-}
-
 struct ContentView: View {
     @State private var properties: ContainerProperties = .init()
-    
-    let orchestrator = CardOrchestrator()
+    @State private var activeCardId: Int?
     
     var body: some View {
         NavigationStack {
@@ -40,8 +30,8 @@ struct ContentView: View {
                 VStack {
                     ForEach(cards, id: \.id) { card in
                         CardView(
+                            activeCardId: $activeCardId,
                             card: card,
-                            orchestrator: orchestrator,
                             properties: properties
                         )
                     }
@@ -88,6 +78,8 @@ struct ContentView: View {
 }
 
 struct CardView: View {
+    @Binding var activeCardId: Int?
+    
     @State var currentSize = CGSize(width: 354, height: 102)
     @State var scaleEffect = 1.0
     @State private var rotationAngle: Double = 0
@@ -99,19 +91,18 @@ struct CardView: View {
     let expandedSize = CGSize(width: 354, height: 532)
 
     let card: Card
-    let orchestrator: CardOrchestrator
     let properties: ContainerProperties
 
     /// Derived from orchestrator
-    var isExpanded: Bool { orchestrator.activeCardId == card.id }
+    var isExpanded: Bool { activeCardId == card.id }
     var currentIndex: Int {
         cards.firstIndex(where: { $0.id == card.id }) ?? 0
     }
     var selectedCardIndex: Int {
-        cards.firstIndex(where: { $0.id == orchestrator.activeCardId }) ?? 0
+        cards.firstIndex(where: { $0.id == activeCardId }) ?? 0
     }
     
-    var anyCardSelected: Bool { orchestrator.activeCardId != nil }
+    var anyCardSelected: Bool { activeCardId != nil }
     
     var stackPosition: (index: Int, count: Int) {
         let nonSelected = cards.indices.filter { $0 != selectedCardIndex }
@@ -136,7 +127,7 @@ struct CardView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             /// Inner container for the title section
                             HStack(alignment: .top) {
-                                Text("Design Sync")
+                                Text("Design \(isExpanded ? "\nSync" : "Sync")")
                                     .font(
                                         .system(
                                             size: isExpanded ? 36 : 24,
@@ -238,7 +229,6 @@ struct CardView: View {
                 }
 
         }
-        .offset(dragOffset)
         .scaleEffect(scaleEffect)
         .rotationEffect(.degrees(rotationAngle))
         .gesture(
@@ -256,7 +246,7 @@ struct CardView: View {
                     let bounds = CGRect(origin: .zero, size: currentSize)
                     if bounds.contains(value.location) {
                         withAnimation(.smooth()) {
-                            orchestrator.activeCardId = card.id
+                            activeCardId = card.id
                         }
                     }
                 }
@@ -280,29 +270,46 @@ struct CardView: View {
                         dragOffset = .zero
                         rotationAngle = 0
                         if shouldCollapse {
-                            orchestrator.activeCardId = nil
+                            activeCardId = nil
                         }
                     }
                 }
             : nil
         )
-        .visualEffect { [properties, anyCardSelected, stackPosition, currentIndex, selectedCardIndex] content, proxy in
+        .visualEffect {
+            /// Combine drag translation and stack positioning into a single offset.
+            /// This prevents `matchedGeometryEffect` from seeing two independent
+            /// transforms (`dragOffset` + stack offset) changing at the same time.
+            [properties, anyCardSelected, stackPosition,
+             currentIndex, selectedCardIndex, dragOffset]
+            content, proxy in
+
+            /// Card's current frame in the ScrollView coordinate space.
             let rect = proxy.frame(in: .scrollView)
+
+            /// Container size used for centering and bottom stacking.
             let bounds = properties.containerSize
 
-            guard anyCardSelected else { return content.offset(y: 0) }
+            /// Start with the user's drag translation.
+            var yOffset = dragOffset.height
+            var xOffset = dragOffset.width
 
-            /// Selected card goes to the center
-            guard currentIndex != selectedCardIndex else {
-                return content.offset(y: (bounds.height / 2) - rect.midY)
+            if anyCardSelected {
+                if currentIndex == selectedCardIndex {
+                    /// Move the selected card to the vertical center.
+                    yOffset += (bounds.height / 2) - rect.midY
+                } else {
+                    /// Stack non-selected cards at the bottom with a 27pt overlap.
+                    let targetMidY =
+                        bounds.height -
+                        CGFloat(stackPosition.count - 1 - stackPosition.index) * 27
+
+                    yOffset += targetMidY - rect.midY
+                }
             }
 
-            /// We want the cards to peek above each other at the bottom rather than
-            /// all collapsing to the same point so we need each card to know its
-            /// order in the stack. stackPosition.index tells us where this card sits
-            /// and we use that to space them 27pt apart.
-            let targetMidY = bounds.height - CGFloat(stackPosition.count - 1 - stackPosition.index) * 27
-            return content.offset(y: targetMidY - rect.midY)
+            /// Apply the single combined transform.
+            return content.offset(x: xOffset, y: yOffset)
         }
     }
 }
