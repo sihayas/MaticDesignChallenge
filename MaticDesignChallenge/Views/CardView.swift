@@ -88,7 +88,7 @@ struct CardView: View {
                 /// Rotation effect has to apply to the card itself, as applying it to the outer ZStack in conjunction with offset translation's creates an unintended "pendulum" effect when both occur at the same time.
                 .rotationEffect(.degrees(currentRotation))
         }
-//        .scaleEffect(scaleEffect)
+        .scaleEffect(scaleEffect)
         /// Primary card stacking logic
         ///
         /// If we used standard offsets or altered the view hierarchy, SwiftUI would force a heavy
