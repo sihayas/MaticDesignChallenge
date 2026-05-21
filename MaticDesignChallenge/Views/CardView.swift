@@ -22,6 +22,7 @@ struct CardView: View {
     let properties: ContainerProperties
 
     // MARK: Local Constants
+    private let cornerRadius: CGFloat = 12.0
     private let collapsedSize: CGSize = CGSize(width: 354, height: 102)
     private let expandedSize: CGSize = CGSize(width: 354, height: 532)
     private let cardPadding: CGFloat = 24
@@ -159,7 +160,7 @@ extension CardView {
     /// the background property to define the shape, to play better with MatchedGeometryEffect
     /// to get a more fluid transition/animation between sizes.
     private var cardShape: some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             .fill(Color(hex: card.bgColor))
             .strokeBorder(.black.opacity(0.35), lineWidth: 1)
             .frame(width: currentSize.width, height: currentSize.height)
@@ -175,7 +176,7 @@ extension CardView {
             //                }
             //            }
             /// Clip to get the desired shape to prevent overlay content overflowing.
-//            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .onChange(of: isExpanded) { _, nV in
                 withAnimation(.smooth()) {
                     currentSize = nV ? expandedSize : collapsedSize
