@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Wave
 
 // MARK: - CardView
 
@@ -17,6 +18,19 @@ struct CardView: View {
     @State private var scaleEffect = 1.0
     @State private var dragOffset: CGSize = .zero
     @State private var dragRotation: Double = 0
+    
+    // MARK: Wave Animation States
+    
+    /// Tracks whether the user is actively dragging the card, allowing us to capture
+    /// the initial offset before the gesture's translation is applied.
+    @State private var isDragging = false
+    
+    /// Captures the starting offset at the exact moment the drag begins.
+    @State private var offsetStart: CGSize = .zero
+    
+    /// The spring physics driver provided by Wave. It handles the fluid calculation
+    /// of our drag offset, seamlessly transitioning from an interactive pan to a physical throw.
+    @State private var offsetAnimator = SpringAnimator<CGSize>(spring: .defaultAnimated)
 
     let card: Card
     let properties: ContainerProperties
@@ -146,6 +160,15 @@ struct CardView: View {
 
             /// Apply the single combined X/Y transform to the render tree.
             return content.offset(x: xOffset, y: yOffset)
+        }
+        /// Bind the Wave animator to our SwiftUI state.
+        /// This callback fires on every frame of the spring animation, updating the
+        /// `dragOffset` which in turn dynamically drives the `.visualEffect` calculations.
+        .onAppear {
+            offsetAnimator.value = dragOffset
+            offsetAnimator.valueChanged = { value in
+                dragOffset = value
+            }
         }
     }
 }
@@ -295,7 +318,7 @@ extension CardView {
         expandedAlignment: HorizontalAlignment,
         collapsedSpacing: CGFloat,
         expandedFont: Font,
-        collapsedFont: Font,
+        collapsedFont: Font
     ) -> some View {
         /// Split on the first space so "Team Sync" becomes ["Team", "Sync"].
         /// Single-word strings produce an empty secondPart and render as one Text.
@@ -385,6 +408,13 @@ extension CardView {
 
     /// Fires every frame while the user drags an expanded card.
     private func expandedGestureChanged(_ value: DragGesture.Value) {
+        /// Capture the initial offset state the exact moment the user makes contact,
+        /// ensuring subsequent frame calculations stack correctly on top of the origin.
+        if !isDragging {
+            isDragging = true
+            offsetStart = dragOffset
+        }
+
         var rawTranslation = value.translation
 
         /// Clamps upward drag using Apple's rubber band formula so the card
@@ -395,10 +425,16 @@ extension CardView {
             rawTranslation.height = -rubberbandedY
         }
 
-        /// `interactiveSpring` tracks the finger in real time while preserving
-        /// enough velocity to carry through the collapse threshold naturally.
+        /// Pass the raw translation directly into the Wave animator.
+        /// Setting the mode to `.nonAnimated` ensures the card sticks perfectly to the
+        /// user's finger without any spring delay during the active pan gesture.
+        offsetAnimator.target = offsetStart + rawTranslation
+        offsetAnimator.mode = .nonAnimated
+        offsetAnimator.start()
+        
+        /// SwiftUI gracefully handles the rotation state since we only want that to tilt slightly
+        /// during the interactive drag, completely independent from Wave's physical offset calculations.
         withAnimation(.interactiveSpring) {
-            dragOffset = rawTranslation
             dragRotation = 4
         }
     }
@@ -406,18 +442,43 @@ extension CardView {
     /// Fires when the user releases an expanded card.
     /// Snaps back to rest, or collapses the card if the threshold was passed enough.
     private func expandedGestureEnded(_ value: DragGesture.Value) {
+        isDragging = false
+        
         /// predictedEndTranslation extrapolates the finger velocity to decide
         /// intent. A slow drag that crosses 120pt won't collapse, but a fast flick will.
-        let shouldCollapse =
-            value.predictedEndTranslation.height > collapseThreshold
+        let shouldCollapse = value.predictedEndTranslation.height > collapseThreshold
 
+        /// Inject the gesture's raw release velocity into Wave.
+        /// Wave natively translates this momentum into a continuous physical curve
+        offsetAnimator.velocity = value.velocity
+        offsetAnimator.target = .zero
+        offsetAnimator.mode = .animated
+        offsetAnimator.start()
+
+        /// SwiftUI simultaneously handles structural layout transitions without conflicting
+        /// with the in-flight physics. Ideally, we would drive all the animation's with wave for synchronicity but this is fine for now.
         withAnimation(.spring) {
-            dragOffset = .zero
             dragRotation = 0
 
             if shouldCollapse {
                 activeCardId = nil
             }
         }
+    }
+}
+
+// MARK: - Velocity Extensions
+// Kept for syntactic completeness if manual scaling or vector math is needed later.
+
+extension CGSize {
+    static func * (lhs: CGSize, rhs: CGFloat) -> CGSize {
+        CGSize(width: lhs.width * rhs, height: lhs.height * rhs)
+    }
+
+    static func + (lhs: CGSize, rhs: CGSize) -> CGSize {
+        CGSize(
+            width: lhs.width + rhs.width,
+            height: lhs.height + rhs.height
+        )
     }
 }
