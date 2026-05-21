@@ -255,7 +255,7 @@ extension CardView {
         animatedSplitText(
             text: card.title,
             expandedAlignment: .leading,
-            collapsedSpacing: 6,
+            collapsedSpacing: 5,
             expandedFont: .system(size: 36, weight: .medium),
             collapsedFont: .system(size: 24, weight: .medium)
         )
@@ -276,8 +276,7 @@ extension CardView {
     ///
     /// Standard SwiftUI text updates (like dynamically inserting a `\n`) trigger a crossfade
     /// replacement animation. By splitting the text into two distinct `Text` views and shifting
-    /// the container from an `HStack` to a `VStack` using `AnyLayout`, SwiftUI physically tracks
-    /// the bounding boxes of the words, resulting in a fluid, spatial layout transition.
+    /// the container from an `HStack` to a `VStack` using `AnyLayout`, we're able  to physically track the bounding boxes of the words, resulting in a fluid, spatial layout transition. Ideally we don't need this but Text() is very specific with how it animates strings.
     ///
     /// - Parameters:
     ///   - text: The string to split. The first word becomes the first `Text`, the remainder the second.
