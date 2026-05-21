@@ -1,0 +1,393 @@
+//
+//  CardView.swift
+//  MaticDesignChallenge
+//
+//  Created by daemons on 5/20/26.
+//
+
+import SwiftUI
+
+// MARK: - CardView
+
+struct CardView: View {
+    @Binding var activeCardId: Int?
+    
+    @State var currentSize = CGSize(width: 354, height: 102)
+    @State private var isPressing: Bool = false
+    @State var scaleEffect = 1.0
+    @State private var dragOffset: CGSize = .zero
+    @State private var dragRotation: Double = 0
+
+    let card: Card
+    let properties: ContainerProperties
+
+    // MARK: Local Constants
+    private let collapsedSize: CGSize = CGSize(width: 354, height: 102)
+    private let expandedSize: CGSize = CGSize(width: 354, height: 532)
+    private let cardPadding: CGFloat = 24
+    private let cardSpacing: CGFloat = 24
+
+    // MARK: Derived Properties
+    
+    /// Whether this card is the currently selected/expanded card.
+    private var isExpanded: Bool { activeCardId == card.id }
+
+    /// The position of this card in the global `cards` array.
+    /// Captured in `renderState` to identify this card's role in the visual effect.
+    private var currentIndex: Int {
+        cards.firstIndex(where: { $0.id == card.id }) ?? 0
+    }
+
+    /// The position of the selected card in the global `cards` array.
+    /// Captured in `renderState` so `.visualEffect` can determine which card to pin to the top.
+    private var selectedCardIndex: Int {
+        cards.firstIndex(where: { $0.id == activeCardId }) ?? 0
+    }
+
+    /// Whether any card in the stack is currently selected.
+    /// The primary branch condition in `.visualEffect` & drives the entire layout switch
+    /// between idle resting positions and the expanded/stacked states.
+    private var anyCardSelected: Bool { activeCardId != nil }
+
+    /// The position of this card within the non-selected cards.
+    /// Used by `.visualEffect` to calculate each card's exact slot in the bottom stack
+    /// when another card is expanded.
+    private var stackPosition: (index: Int, count: Int) {
+        let nonSelected = cards.indices.filter { $0 != selectedCardIndex }
+        return (
+            index: nonSelected.firstIndex(of: currentIndex) ?? 0,
+            count: nonSelected.count
+        )
+    }
+
+    /// Art-directed resting rotation for each card in the idle stack.
+    /// Captured in `renderState` and applied by `.visualEffect` when no card is selected.
+    /// Cycles through the array so the pattern holds regardless of card count.
+    private var baselineRotation: Double {
+        let rotations: [Double] = [-4, 0, -2]
+        return rotations[currentIndex % rotations.count]
+    }
+
+    // MARK: Body
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            cardShape
+        }
+        .scaleEffect(scaleEffect)
+        .gesture(collapseGesture)
+        .simultaneousGesture(expandedDragGesture)
+
+        /// Primary card stacking logic
+        ///
+        /// If we used standard offsets or altered the view hierarchy, SwiftUI would force a heavy
+        /// layout recalculation on every frame, which can stutter. `.visualEffect` hooks directly
+        /// into the render tree. It allows us to read the card's position inside the `ScrollView`
+        /// and calculate the exact mathematical delta needed to move it to the center (if selected)
+        /// or stack it at the bottom (if inactive) whilst keeping the gesture translation
+        /// butter-smooth and separate from the layout engine. For readability, we could put this into a Sendable struct to maintain the safe copies.
+        .visualEffect {
+            [
+                properties, anyCardSelected, stackPosition,
+                currentIndex, selectedCardIndex, dragOffset, dragRotation, baselineRotation
+            ]
+            content, proxy in
+
+            /// Card's current frame in the ScrollView coordinate space.
+            let rect = proxy.frame(in: .scrollView)
+
+            /// Container size used for centering and bottom stacking.
+            let bounds = properties.containerSize
+
+            /// Start with the user's interactive drag translation.
+            var yOffset = dragOffset.height
+            var xOffset = dragOffset.width
+
+            /// Define final rotation locally.
+            /// When selected, we force 0. Otherwise, use our baseline.
+            let finalRotation: Double
+            if anyCardSelected {
+                finalRotation = currentIndex == selectedCardIndex ? dragRotation : 0
+            } else {
+                finalRotation = baselineRotation
+            }
+
+            if anyCardSelected {
+                if currentIndex == selectedCardIndex {
+                    /// Selected: Pin to 48pt from the top of the container.
+                    yOffset += 48 - rect.minY
+                } else {
+                    /// Calculate the "anchor point" for this specific card in the bottom stack.
+                    /// We treat the bottom of the container as the floor (bounds.height).
+                    /// Each card is pushed up 27pt from the previous one, creating a
+                    /// cascading "deck of cards" effect.
+                    let stackOffsetFromBottom =
+                        CGFloat(stackPosition.count - 1 - stackPosition.index)
+                        * 27
+                    let targetMidY = bounds.height - stackOffsetFromBottom
+
+                    /// Calculate the travel distance.
+                    /// A View's .offset() is relative to its original position.
+                    /// We find the difference between where the card *should* be (targetMidY)
+                    /// and where it currently sits in the scroll view (rect.midY).
+                    /// By adding this difference to yOffset, we force the card to "snap"
+                    /// into its specific stack slot.
+                    yOffset += targetMidY - rect.midY
+                }
+            }
+
+            /// Apply the single combined transform to the render tree.
+            /// We use .bottom anchor so the card "leans" naturally in the stack.
+            return
+                content
+                .offset(x: xOffset, y: yOffset)
+                .rotationEffect(.degrees(finalRotation))
+        }
+    }
+}
+
+// MARK: - Sub-views
+
+extension CardView {
+
+    // MARK: Card Shape
+
+    /// The card's primary shape is a colored rectangle that owns all content as an overlay.
+    /// We overlay content ONTO the shape, instead of embedding it INSIDE a Stack and setting
+    /// the background property to define the shape, to play better with MatchedGeometryEffect
+    /// to get a more fluid transition/animation between sizes.
+    private var cardShape: some View {
+        Rectangle()
+            .fill(Color(hex: card.bgColor))
+            .frame(width: currentSize.width, height: currentSize.height)
+            .overlay(alignment: .topLeading) {
+                cardContent
+            }
+            .colorMultiply(isPressing ? Color(white: 0.85) : .white)
+        /// We could use an overlay here to match the Figma spec, but there are sizing and clipping isues when expanding and contracting a shape so a color multiply on the Rectangle itself is more appealing, either approach works
+//            .overlay {
+//                if isPressing {
+//                    Rectangle()
+//                        .fill(.black.opacity(0.16))
+//                }
+//            }
+            /// Clip to get the desired shape to prevent overlay content overflowing
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            /// Inset border
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(.black.opacity(0.35), lineWidth: 1)
+            }
+            .onChange(of: isExpanded) { _, nV in
+                withAnimation(.smooth()) {
+                    currentSize = nV ? expandedSize : collapsedSize
+                }
+            }
+    }
+
+    // MARK: Card Content
+
+    /// Overlaid content container that owns each individual section.
+    private var cardContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            titlebarSection()
+
+            if isExpanded {
+                detailSection()
+            }
+        }
+        /// Utilizing a "mask" approach for performance, so we set the content frame size to our expanded size.
+        .frame(
+            width: expandedSize.width,
+            height: expandedSize.height,
+            alignment: .topLeading
+        )
+    }
+
+    // MARK: Titlebar Section
+
+    @ViewBuilder
+    private func titlebarSection() -> some View {
+        /// Utilize a ZStack and animate the alignment change to get a fluid transition for the `subtitleView` from the bottom left corner to the top right corner. MatchedGeometryEffect could also get the effect we are looking for but it is not ideal to maintain.
+        ZStack(alignment: isExpanded ? .topTrailing : .bottomLeading) {
+            HStack(alignment: .top) {
+                titleView()
+            }
+            .frame(
+                maxWidth: .infinity,
+                maxHeight: isExpanded ? nil : 102,
+                alignment: .topLeading
+            )
+
+            subtitleView()
+        }
+        .padding(cardPadding)
+        .frame(maxHeight: isExpanded ? nil : 102)
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: Detail Section
+
+    @ViewBuilder
+    private func detailSection() -> some View {
+        VStack(alignment: .leading, spacing: cardSpacing) {
+            Rectangle()
+                .fill(.black.opacity(0.35))
+                .frame(height: 1)
+
+            detailRow(title: "Agenda", text: card.agenda)
+
+            detailRow(
+                title: "Participants",
+                text: card.participants.joined(separator: ", ")
+            )
+        }
+        .padding([.horizontal, .bottom], cardPadding)
+        .frame(
+            maxWidth: .infinity,
+            maxHeight: .infinity,
+            alignment: .topLeading
+        )
+    }
+
+    // MARK: - Component Implementations
+
+    @ViewBuilder
+    private func titleView() -> some View {
+        animatedSplitText(
+            text: card.title,
+            expandedAlignment: .leading,
+            collapsedSpacing: 6,
+            expandedFont: .system(size: 36, weight: .medium),
+            collapsedFont: .system(size: 24, weight: .medium)
+        )
+    }
+
+    @ViewBuilder
+    private func subtitleView() -> some View {
+        animatedSplitText(
+            text: card.subTitle,
+            expandedAlignment: .trailing,
+            collapsedSpacing: 4,
+            expandedFont: .system(size: 17, weight: .medium),
+            collapsedFont: .system(size: 17, weight: .medium),
+        )
+    }
+
+    /// Helper that physically animates a string.
+    ///
+    /// Standard SwiftUI text updates (like dynamically inserting a `\n`) trigger a crossfade
+    /// replacement animation. By splitting the text into two distinct `Text` views and shifting
+    /// the container from an `HStack` to a `VStack` using `AnyLayout`, SwiftUI physically tracks
+    /// the bounding boxes of the words, resulting in a fluid, spatial layout transition.
+    @ViewBuilder
+    private func animatedSplitText(
+        text: String,
+        expandedAlignment: HorizontalAlignment,
+        collapsedSpacing: CGFloat,
+        expandedFont: Font,
+        collapsedFont: Font,
+    ) -> some View {
+        let parts = text.components(separatedBy: " ")
+        let firstPart = parts.first ?? ""
+        let secondPart = parts.dropFirst().joined(separator: " ")
+
+        let layout =
+            isExpanded
+            ? AnyLayout(VStackLayout(alignment: expandedAlignment, spacing: 0))
+            : AnyLayout(HStackLayout(spacing: collapsedSpacing))
+
+        layout {
+            Text(firstPart)
+
+            if !secondPart.isEmpty {
+                Text(secondPart)
+            }
+        }
+        .font(isExpanded ? expandedFont : collapsedFont)
+        .foregroundStyle(Color(hex: card.textColor))
+        .animation(.snappy(), value: isExpanded)
+    }
+
+    @ViewBuilder
+    private func detailRow(title: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .cardLabelStyle(color: Color(hex: card.textColor))
+
+            Text(text)
+                .cardBodyStyle(color: Color(hex: card.textColor))
+        }
+    }
+
+    // MARK: Gestures
+
+    private var collapseGesture: some Gesture {
+        !isExpanded
+            ? DragGesture(minimumDistance: 0)
+                .onChanged { _ in collapseGestureChanged() }
+                .onEnded { value in collapseGestureEnded(value) }
+            : nil
+    }
+
+    private var expandedDragGesture: some Gesture {
+        isExpanded
+            /// Tell the gesture to calculate its translation relative to the device screen, not the moving card. This  decouples the touch math from the view's rotation and bounding box changes.
+            ? DragGesture(coordinateSpace: .global)
+                .onChanged { value in expandedDragChanged(value) }
+                .onEnded { value in expandedDragEnded(value) }
+            : nil
+    }
+
+    // MARK: Gesture Handlers
+
+    private func collapseGestureChanged() {
+        withAnimation(.smooth()) {
+            scaleEffect = 0.92
+            isPressing = true
+        }
+    }
+
+    private func collapseGestureEnded(_ value: DragGesture.Value) {
+        withAnimation(.smooth()) {
+            scaleEffect = 1
+            isPressing = false
+        }
+        let bounds = CGRect(origin: .zero, size: currentSize)
+        if bounds.contains(value.location) {
+            withAnimation(.smooth()) { activeCardId = card.id }
+        }
+    }
+
+    private func expandedDragChanged(_ value: DragGesture.Value) {
+        var rawTranslation = value.translation
+
+        /// Introduce friction when dragging upwards.
+        if rawTranslation.height < 0 {
+            let dragLimit: CGFloat = 150.0
+            let upwardDrag = abs(rawTranslation.height)
+            let rubberbandedY = upwardDrag / (1 + (upwardDrag / dragLimit))
+            rawTranslation.height = -rubberbandedY
+        }
+
+        /// Use `interactiveSpring` to be able to maintain velocity on passing threshold.
+        withAnimation(.interactiveSpring) {
+            dragOffset = rawTranslation
+            dragRotation = 4
+        }
+    }
+
+    private func expandedDragEnded(_ value: DragGesture.Value) {
+        /// Only collapse if the user flicks or drags sufficiently downward (positive Y direction)
+        let shouldCollapse = value.predictedEndTranslation.height > 120
+
+        withAnimation(.spring) {
+            dragOffset = .zero
+            dragRotation = 0
+
+            if shouldCollapse {
+                activeCardId = nil
+            }
+        }
+    }
+}
