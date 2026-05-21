@@ -26,6 +26,8 @@ struct CardView: View {
     private let expandedSize: CGSize = CGSize(width: 354, height: 532)
     private let cardPadding: CGFloat = 24
     private let cardSpacing: CGFloat = 24
+    private let dragUpLimit: CGFloat = 120.0
+    private let collapseThreshold: CGFloat = 120
 
     // MARK: Derived Properties
     
@@ -75,9 +77,6 @@ struct CardView: View {
             cardShape
         }
         .scaleEffect(scaleEffect)
-        .gesture(collapseGesture)
-        .simultaneousGesture(expandedDragGesture)
-
         /// Primary card stacking logic
         ///
         /// If we used standard offsets or altered the view hierarchy, SwiftUI would force a heavy
@@ -143,6 +142,8 @@ struct CardView: View {
                 .offset(x: xOffset, y: yOffset)
                 .rotationEffect(.degrees(finalRotation))
         }
+        .gesture(collapseGesture)
+        .simultaneousGesture(expandedDragGesture)
     }
 }
 
@@ -164,16 +165,16 @@ extension CardView {
                 cardContent
             }
             .colorMultiply(isPressing ? Color(white: 0.85) : .white)
-        /// We could use an overlay here to match the Figma spec, but there are sizing and clipping isues when expanding and contracting a shape so a color multiply on the Rectangle itself is more appealing, either approach works
+        /// We could use an overlay here to match the Figma spec, but there are sizing and clipping isues when expanding and contracting a shape so a color multiply on the Rectangle itself is more appealing, either approach works.
 //            .overlay {
 //                if isPressing {
 //                    Rectangle()
 //                        .fill(.black.opacity(0.16))
 //                }
 //            }
-            /// Clip to get the desired shape to prevent overlay content overflowing
+            /// Clip to get the desired shape to prevent overlay content overflowing.
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            /// Inset border
+            /// Inset border effect.
             .overlay {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(.black.opacity(0.35), lineWidth: 1)
@@ -274,12 +275,19 @@ extension CardView {
         )
     }
 
-    /// Helper that physically animates a string.
+    /// Physically animates a string splitting from one line into two.
     ///
     /// Standard SwiftUI text updates (like dynamically inserting a `\n`) trigger a crossfade
     /// replacement animation. By splitting the text into two distinct `Text` views and shifting
     /// the container from an `HStack` to a `VStack` using `AnyLayout`, SwiftUI physically tracks
     /// the bounding boxes of the words, resulting in a fluid, spatial layout transition.
+    ///
+    /// - Parameters:
+    ///   - text: The string to split. The first word becomes the first `Text`, the remainder the second.
+    ///   - expandedAlignment: Horizontal alignment of the `VStack` when expanded (e.g. `.leading` for title, `.trailing` for subtitle).
+    ///   - collapsedSpacing: The spacing between the two words when collapsed inline in the `HStack`.
+    ///   - expandedFont: Font applied when the card is expanded.
+    ///   - collapsedFont: Font applied when the card is collapsed.
     @ViewBuilder
     private func animatedSplitText(
         text: String,
@@ -288,24 +296,35 @@ extension CardView {
         expandedFont: Font,
         collapsedFont: Font,
     ) -> some View {
+        /// Split on the first space so "Team Sync" becomes ["Team", "Sync"].
+        /// Single-word strings produce an empty secondPart and render as one Text.
         let parts = text.components(separatedBy: " ")
         let firstPart = parts.first ?? ""
         let secondPart = parts.dropFirst().joined(separator: " ")
 
+        /// Swap the container type based on expansion state.
+        /// `AnyLayout` type-erases the layout so SwiftUI sees one view whose
+        /// container changes, rather than two separate views being swapped in/out.
+        /// This is what produces the physical word-travel animation instead of a crossfade.
         let layout =
             isExpanded
             ? AnyLayout(VStackLayout(alignment: expandedAlignment, spacing: 0))
             : AnyLayout(HStackLayout(spacing: collapsedSpacing))
 
         layout {
+            /// Anchors the animation for the first word.
             Text(firstPart)
 
+            /// Omitted entirely for single-word strings to avoid a trailing empty Text
+            /// which would add unexpected spacing in the HStack.
             if !secondPart.isEmpty {
                 Text(secondPart)
             }
         }
         .font(isExpanded ? expandedFont : collapsedFont)
         .foregroundStyle(Color(hex: card.textColor))
+        /// Drive the layout swap animation from `isExpanded` so it stays in sync
+        /// with the card size change triggered by `onChange(of: isExpanded)`.
         .animation(.snappy(), value: isExpanded)
     }
 
@@ -325,8 +344,8 @@ extension CardView {
     private var collapseGesture: some Gesture {
         !isExpanded
             ? DragGesture(minimumDistance: 0)
-                .onChanged { _ in collapseGestureChanged() }
-                .onEnded { value in collapseGestureEnded(value) }
+                .onChanged { _ in collapsedGestureChanged() }
+                .onEnded { value in collapsedGestureEnded(value) }
             : nil
     }
 
@@ -334,52 +353,62 @@ extension CardView {
         isExpanded
             /// Tell the gesture to calculate its translation relative to the device screen, not the moving card. This  decouples the touch math from the view's rotation and bounding box changes.
             ? DragGesture(coordinateSpace: .global)
-                .onChanged { value in expandedDragChanged(value) }
-                .onEnded { value in expandedDragEnded(value) }
+                .onChanged { value in expandedGestureChanged(value) }
+                .onEnded { value in expandedGestureEnded(value) }
             : nil
     }
 
     // MARK: Gesture Handlers
-
-    private func collapseGestureChanged() {
-        withAnimation(.smooth()) {
+    
+    /// Fires every frame while the user presses a collapsed card.
+    /// Scales down and activates the press overlay to give tactile feedback.
+    private func collapsedGestureChanged() {
+        withAnimation(.smooth) {
             scaleEffect = 0.92
             isPressing = true
         }
     }
 
-    private func collapseGestureEnded(_ value: DragGesture.Value) {
-        withAnimation(.smooth()) {
+    /// Fires when the user lifts their finger from a collapsed card.
+    /// Restores scale and press state, then expands the card if the finger
+    /// is still within the card bounds (i.e. it was a tap, not a drag off).
+    private func collapsedGestureEnded(_ value: DragGesture.Value) {
+        withAnimation(.smooth) {
             scaleEffect = 1
             isPressing = false
         }
         let bounds = CGRect(origin: .zero, size: currentSize)
         if bounds.contains(value.location) {
-            withAnimation(.smooth()) { activeCardId = card.id }
+            withAnimation(.smooth) { activeCardId = card.id }
         }
     }
 
-    private func expandedDragChanged(_ value: DragGesture.Value) {
+    /// Fires every frame while the user drags an expanded card.
+    private func expandedGestureChanged(_ value: DragGesture.Value) {
         var rawTranslation = value.translation
 
-        /// Introduce friction when dragging upwards.
+        /// Clamps upward drag using Apple's rubber band formula so the card
+        /// resists being pulled further up the screen the harder you pull.
         if rawTranslation.height < 0 {
-            let dragLimit: CGFloat = 150.0
             let upwardDrag = abs(rawTranslation.height)
-            let rubberbandedY = upwardDrag / (1 + (upwardDrag / dragLimit))
+            let rubberbandedY = upwardDrag / (1 + (upwardDrag / dragUpLimit))
             rawTranslation.height = -rubberbandedY
         }
 
-        /// Use `interactiveSpring` to be able to maintain velocity on passing threshold.
+        /// interactiveSpring tracks the finger in real time while preserving
+        /// enough velocity to carry through the collapse threshold naturally.
         withAnimation(.interactiveSpring) {
             dragOffset = rawTranslation
             dragRotation = 4
         }
     }
 
-    private func expandedDragEnded(_ value: DragGesture.Value) {
-        /// Only collapse if the user flicks or drags sufficiently downward (positive Y direction)
-        let shouldCollapse = value.predictedEndTranslation.height > 120
+    /// Fires when the user releases an expanded card.
+    /// Snaps back to rest, or collapses the card if the threshold was passed enough.
+    private func expandedGestureEnded(_ value: DragGesture.Value) {
+        /// predictedEndTranslation extrapolates the finger velocity to decide
+        /// intent. A slow drag that crosses 120pt won't collapse, but a fast flick will.
+        let shouldCollapse = value.predictedEndTranslation.height > collapseThreshold
 
         withAnimation(.spring) {
             dragOffset = .zero
