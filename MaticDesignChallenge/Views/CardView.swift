@@ -25,10 +25,15 @@ struct CardView: View {
     private let cornerRadius: CGFloat = 12.0
     private let collapsedSize: CGSize = CGSize(width: 354, height: 102)
     private let expandedSize: CGSize = CGSize(width: 354, height: 532)
+    
     private let cardPadding: CGFloat = 24
     private let cardSpacing: CGFloat = 24
     private let dragUpLimit: CGFloat = 120.0
     private let collapseThreshold: CGFloat = 120
+    private let titleExpandedFont: Font = .system(size: 36, weight: .medium)
+    private let titleCollapsedFont: Font = .system(size: 24, weight: .medium)
+    private let subtitleFont: Font = .system(size: 17, weight: .medium)
+
 
     // MARK: Derived Properties
 
@@ -63,7 +68,6 @@ struct CardView: View {
         )
     }
 
-    /// Art-directed resting rotation for each card in the idle stack.
     /// Captured in `renderState` and applied by `.visualEffect` when no card is selected.
     /// Cycles through the array so the pattern holds regardless of card count.
     private var baselineRotation: Double {
@@ -72,6 +76,7 @@ struct CardView: View {
     }
 
     /// Determines the correct rotation based on the current state.
+    /// We need to manually drive this instead of letting .visualEffect drive this to prevent the swing side-effect.
     private var currentRotation: Double {
         if anyCardSelected {
             return currentIndex == selectedCardIndex ? dragRotation : 0
@@ -142,9 +147,6 @@ struct CardView: View {
             /// Apply the single combined X/Y transform to the render tree.
             return content.offset(x: xOffset, y: yOffset)
         }
-
-        .gesture(collapseGesture)
-        .simultaneousGesture(expandedDragGesture)
     }
 }
 
@@ -163,6 +165,10 @@ extension CardView {
             .fill(Color(hex: card.bgColor))
             .strokeBorder(.black.opacity(0.35), lineWidth: 1)
             .frame(width: currentSize.width, height: currentSize.height)
+            /// Add the gesture/interaction specifically to the shifting shape, not above or below, to keep hit testing accurate to the visible shape.
+            .gesture(collapseGesture)
+            .simultaneousGesture(expandedDragGesture)
+            /// Overlay the content on to the shifting shape.
             .overlay(alignment: .topLeading) {
                 cardContent
             }
@@ -255,8 +261,8 @@ extension CardView {
             text: card.title,
             expandedAlignment: .leading,
             collapsedSpacing: 5,
-            expandedFont: .system(size: 36, weight: .medium),
-            collapsedFont: .system(size: 24, weight: .medium)
+            expandedFont: titleExpandedFont,
+            collapsedFont: titleCollapsedFont
         )
     }
 
@@ -266,8 +272,8 @@ extension CardView {
             text: card.subTitle,
             expandedAlignment: .trailing,
             collapsedSpacing: 4,
-            expandedFont: .system(size: 17, weight: .medium),
-            collapsedFont: .system(size: 17, weight: .medium),
+            expandedFont: subtitleFont,
+            collapsedFont: subtitleFont
         )
     }
 
@@ -300,7 +306,6 @@ extension CardView {
         /// Swap the container type based on expansion state.
         /// `AnyLayout` type-erases the layout so SwiftUI sees one view whose
         /// container changes, rather than two separate views being swapped in/out.
-        /// This is what produces the physical word-travel animation instead of a crossfade.
         let layout =
             isExpanded
             ? AnyLayout(VStackLayout(alignment: expandedAlignment, spacing: 0))
@@ -390,7 +395,7 @@ extension CardView {
             rawTranslation.height = -rubberbandedY
         }
 
-        /// interactiveSpring tracks the finger in real time while preserving
+        /// `interactiveSpring` tracks the finger in real time while preserving
         /// enough velocity to carry through the collapse threshold naturally.
         withAnimation(.interactiveSpring) {
             dragOffset = rawTranslation
