@@ -11,10 +11,10 @@ import SwiftUI
 
 struct CardView: View {
     @Binding var activeCardId: Int?
-    
-    @State var currentSize = CGSize(width: 354, height: 102)
+
+    @State private var currentSize = CGSize(width: 354, height: 102)
     @State private var isPressing: Bool = false
-    @State var scaleEffect = 1.0
+    @State private var scaleEffect = 1.0
     @State private var dragOffset: CGSize = .zero
     @State private var dragRotation: Double = 0
 
@@ -30,7 +30,7 @@ struct CardView: View {
     private let collapseThreshold: CGFloat = 120
 
     // MARK: Derived Properties
-    
+
     /// Whether this card is the currently selected/expanded card.
     private var isExpanded: Bool { activeCardId == card.id }
 
@@ -70,11 +70,22 @@ struct CardView: View {
         return rotations[currentIndex % rotations.count]
     }
 
+    /// Determines the correct rotation based on the current state.
+    private var currentRotation: Double {
+        if anyCardSelected {
+            return currentIndex == selectedCardIndex ? dragRotation : 0
+        } else {
+            return baselineRotation
+        }
+    }
+
     // MARK: Body
 
     var body: some View {
         ZStack(alignment: .top) {
             cardShape
+            /// Rotation effect has to apply to the card itself, as applying it to the outer ZStack in conjunction with offset translation's creates an unintended "pendulum" effect when both occur at the same time.
+            .rotationEffect(.degrees(currentRotation))
         }
         .scaleEffect(scaleEffect)
         /// Primary card stacking logic
@@ -85,12 +96,14 @@ struct CardView: View {
         /// and calculate the exact mathematical delta needed to move it to the center (if selected)
         /// or stack it at the bottom (if inactive) whilst keeping the gesture translation
         /// butter-smooth and separate from the layout engine. For readability, we could put this into a Sendable struct to maintain the safe copies.
+        /// Keep ONLY the heavy geometry math inside visualEffect
         .visualEffect {
             [
                 properties, anyCardSelected, stackPosition,
-                currentIndex, selectedCardIndex, dragOffset, dragRotation, baselineRotation
+                currentIndex, selectedCardIndex, dragOffset
             ]
-            content, proxy in
+            content,
+            proxy in
 
             /// Card's current frame in the ScrollView coordinate space.
             let rect = proxy.frame(in: .scrollView)
@@ -100,16 +113,7 @@ struct CardView: View {
 
             /// Start with the user's interactive drag translation.
             var yOffset = dragOffset.height
-            var xOffset = dragOffset.width
-
-            /// Define final rotation locally.
-            /// When selected, we force 0. Otherwise, use our baseline.
-            let finalRotation: Double
-            if anyCardSelected {
-                finalRotation = currentIndex == selectedCardIndex ? dragRotation : 0
-            } else {
-                finalRotation = baselineRotation
-            }
+            let xOffset = dragOffset.width
 
             if anyCardSelected {
                 if currentIndex == selectedCardIndex {
@@ -136,12 +140,9 @@ struct CardView: View {
             }
 
             /// Apply the single combined transform to the render tree.
-            /// We use .bottom anchor so the card "leans" naturally in the stack.
-            return
-                content
-                .offset(x: xOffset, y: yOffset)
-                .rotationEffect(.degrees(finalRotation))
+            return content.offset(x: xOffset, y: yOffset)
         }
+        
         .gesture(collapseGesture)
         .simultaneousGesture(expandedDragGesture)
     }
@@ -165,13 +166,13 @@ extension CardView {
                 cardContent
             }
             .colorMultiply(isPressing ? Color(white: 0.85) : .white)
-        /// We could use an overlay here to match the Figma spec, but there are sizing and clipping isues when expanding and contracting a shape so a color multiply on the Rectangle itself is more appealing, either approach works.
-//            .overlay {
-//                if isPressing {
-//                    Rectangle()
-//                        .fill(.black.opacity(0.16))
-//                }
-//            }
+            /// We could use an overlay here to match the Figma spec, but there are sizing and clipping isues when expanding and contracting a shape so a color multiply on the Rectangle itself is more appealing, either approach works.
+            //            .overlay {
+            //                if isPressing {
+            //                    Rectangle()
+            //                        .fill(.black.opacity(0.16))
+            //                }
+            //            }
             /// Clip to get the desired shape to prevent overlay content overflowing.
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             /// Inset border effect.
@@ -359,7 +360,7 @@ extension CardView {
     }
 
     // MARK: Gesture Handlers
-    
+
     /// Fires every frame while the user presses a collapsed card.
     /// Scales down and activates the press overlay to give tactile feedback.
     private func collapsedGestureChanged() {
@@ -408,7 +409,8 @@ extension CardView {
     private func expandedGestureEnded(_ value: DragGesture.Value) {
         /// predictedEndTranslation extrapolates the finger velocity to decide
         /// intent. A slow drag that crosses 120pt won't collapse, but a fast flick will.
-        let shouldCollapse = value.predictedEndTranslation.height > collapseThreshold
+        let shouldCollapse =
+            value.predictedEndTranslation.height > collapseThreshold
 
         withAnimation(.spring) {
             dragOffset = .zero
