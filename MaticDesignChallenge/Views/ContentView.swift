@@ -29,7 +29,6 @@ struct ContentView: View {
             }
             .defaultScrollAnchor(.center)
             .scrollDisabled(true)
-
             /// Tracks scroll position in content space (offset + insets). Cheaper than a proxy-based read.
             .onScrollGeometryChange(for: CGFloat.self) {
                 $0.contentOffset.y + $0.contentInsets.top
@@ -43,8 +42,9 @@ struct ContentView: View {
             } action: { newValue in
                 properties.minY = newValue - properties.safeArea.top
             }
-        }
 
+        }
+    
         /// Container size (NavigationStack bounds). Required for push-down animation math.
         .onGeometryChange(for: CGSize.self) {
             $0.size

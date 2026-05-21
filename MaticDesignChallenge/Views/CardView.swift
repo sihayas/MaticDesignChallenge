@@ -88,7 +88,7 @@ struct CardView: View {
                 /// Rotation effect has to apply to the card itself, as applying it to the outer ZStack in conjunction with offset translation's creates an unintended "pendulum" effect when both occur at the same time.
                 .rotationEffect(.degrees(currentRotation))
         }
-        .scaleEffect(scaleEffect)
+//        .scaleEffect(scaleEffect)
         /// Primary card stacking logic
         ///
         /// If we used standard offsets or altered the view hierarchy, SwiftUI would force a heavy
@@ -103,14 +103,15 @@ struct CardView: View {
                 properties, anyCardSelected, stackPosition,
                 currentIndex, selectedCardIndex, dragOffset
             ]
-            content,
-            proxy in
+            content, proxy in
 
-            /// Card's current frame in the ScrollView coordinate space.
-            let rect = proxy.frame(in: .scrollView)
+            /// Read frames in both coordinate spaces.
+            let globalRect = proxy.frame(in: .global)
+            let localRect = proxy.frame(in: .scrollView)
 
-            /// Container size used for centering and bottom stacking.
-            let bounds = properties.containerSize
+            /// Calculate the absolute bottom of the physical device screen.
+            /// Bypasses `.defaultScrollAnchor` offsets by summing the true container window.
+            let globalBottomFloor = properties.safeArea.top + properties.containerSize.height + properties.safeArea.bottom
 
             /// Start with the user's interactive drag translation.
             var yOffset = dragOffset.height
@@ -119,28 +120,26 @@ struct CardView: View {
             if anyCardSelected {
                 if currentIndex == selectedCardIndex {
                     /// Selected: Pin to 48pt from the top of the container.
-                    yOffset += 48 - rect.minY
+                    /// Uses local coordinate space so it respects the NavigationStack padding.
+                    yOffset += 48 - localRect.minY
                 } else {
                     /// Calculate the "anchor point" for this specific card in the bottom stack.
-                    /// We treat the bottom of the container as the floor (bounds.height).
                     /// Each card is pushed up 27pt from the previous one, creating a
                     /// cascading "deck of cards" effect.
-                    let stackOffsetFromBottom =
-                        CGFloat(stackPosition.count - 1 - stackPosition.index)
-                        * 27
-                    let targetMidY = bounds.height - stackOffsetFromBottom
+                    let stackOffsetFromBottom = CGFloat(stackPosition.count - 1 - stackPosition.index) * 27
+                    
+                    /// We calculate the target position relative to the absolute physical screen glass.
+                    let targetGlobalMidY = globalBottomFloor - stackOffsetFromBottom
 
                     /// Calculate the travel distance.
                     /// A View's .offset() is relative to its original position.
-                    /// We find the difference between where the card *should* be (targetMidY)
-                    /// and where it currently sits in the scroll view (rect.midY).
-                    /// By adding this difference to yOffset, we force the card to "snap"
-                    /// into its specific stack slot.
-                    yOffset += targetMidY - rect.midY
+                    /// By evaluating absolute Global coordinates, we insulate the math
+                    /// against ScrollView layout shifts.
+                    yOffset += targetGlobalMidY - globalRect.midY
                 }
             }
 
-            /// Apply the single combined transform to the render tree.
+            /// Apply the single combined X/Y transform to the render tree.
             return content.offset(x: xOffset, y: yOffset)
         }
 
