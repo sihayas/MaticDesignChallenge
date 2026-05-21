@@ -84,8 +84,8 @@ struct CardView: View {
     var body: some View {
         ZStack(alignment: .top) {
             cardShape
-            /// Rotation effect has to apply to the card itself, as applying it to the outer ZStack in conjunction with offset translation's creates an unintended "pendulum" effect when both occur at the same time.
-            .rotationEffect(.degrees(currentRotation))
+                /// Rotation effect has to apply to the card itself, as applying it to the outer ZStack in conjunction with offset translation's creates an unintended "pendulum" effect when both occur at the same time.
+                .rotationEffect(.degrees(currentRotation))
         }
         .scaleEffect(scaleEffect)
         /// Primary card stacking logic
@@ -142,7 +142,7 @@ struct CardView: View {
             /// Apply the single combined transform to the render tree.
             return content.offset(x: xOffset, y: yOffset)
         }
-        
+
         .gesture(collapseGesture)
         .simultaneousGesture(expandedDragGesture)
     }
@@ -159,8 +159,9 @@ extension CardView {
     /// the background property to define the shape, to play better with MatchedGeometryEffect
     /// to get a more fluid transition/animation between sizes.
     private var cardShape: some View {
-        Rectangle()
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
             .fill(Color(hex: card.bgColor))
+            .strokeBorder(.black.opacity(0.35), lineWidth: 1)
             .frame(width: currentSize.width, height: currentSize.height)
             .overlay(alignment: .topLeading) {
                 cardContent
@@ -174,12 +175,7 @@ extension CardView {
             //                }
             //            }
             /// Clip to get the desired shape to prevent overlay content overflowing.
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            /// Inset border effect.
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(.black.opacity(0.35), lineWidth: 1)
-            }
+//            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .onChange(of: isExpanded) { _, nV in
                 withAnimation(.smooth()) {
                     currentSize = nV ? expandedSize : collapsedSize
@@ -189,14 +185,13 @@ extension CardView {
 
     // MARK: Card Content
 
-    /// Overlaid content container that owns each individual section.
+    /// Overlaid content container that owns each individual section. Takes up the expanded size of the card to align with a masking approach to preserve performance and avoid layout calculations.
     private var cardContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             titlebarSection()
-
-            if isExpanded {
-                detailSection()
-            }
+            
+            /// We could conditionally render this but this is fine for now.
+            detailSection()
         }
         /// Utilizing a "mask" approach for performance, so we set the content frame size to our expanded size.
         .frame(
