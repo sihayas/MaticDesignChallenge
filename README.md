@@ -2,3 +2,21 @@
 
 https://github.com/user-attachments/assets/919e6767-f355-4451-b693-d5e4a57f5b43
 
+Card Stack Transition
+
+The primary transition, from list to stacked cards, is driven by an individual visualEffect modifier on each card. visualEffect is extremely optimized for these use cases where you would want to continuously transform a view based on its geometry without forcing the SwiftUI layout engine to recalculate the entire view hierarchy on every frame. An alternate, more granular approach could be to have an orchestrator class controlling and driving each card’s animations individually, but it would be more confusing to manage. In UIKit, we could create a custom UITransition, but that would be more code and more complicated to maintain. 2 separate gestures drive the 2 different possible states of expanded or collapsed. We could unify this into one, but for clarity there are two. The transition itself also had to be interruptible at the very least, which visualEffect was great for.  
+
+Collapsed to Expanded Animation
+The transition for the card itself from collapsed -> expanded was initially made with matchedGeometryEffect in mind, but matchedGeometry is very difficult to work with even in the most ideal conditions, plus the effect I was looking for wasn’t there. I wanted the text in the collapsed state to smoothly transition & physically move into where it should be in the expanded state to give a sense of permanence to the user, instead of an abrupt fade in fade out. So instead of matchGeometry from a CollapsedCard view to an ExpandedCard view, we have one morphing shape that has content overlaid. For performance and avoiding needing to recalculate layout changes on size changes, we manually constrain the height of the content to the expanded size, and use a clipShape to prevent overflowing, so that when the underlying shape does expand, it reveals the content instead of laying it out, like a mask. 
+
+Wave
+An important caveat is the usage of Janum Travedi’s Wave package to get a “throwing” effect on swiping a card away. In the main branch, we use a pure SwiftUI approach for the spring animation, but it looses that extra “oomph” that re-targeting provided by Wave gives us. On the wave branch, which is the branch I attached in the deliverables & displayed as the video demo, we use Wave’s provided spring animator instead of Apple’s, which is just a bunch of existing mathematical functions interpolating velocity and acceleration. 
+
+Animations
+TextView in SwiftUI has a very appealing native animation where changing the string without replacing it with a new string, makes the individual words and letters animate effortlessly to their new positions. In the titlebarSection, I initially tried this out, but it doesn’t work reliably enough so I had to create a helper function that took an existing string, and placed it in a custom layout by breaking it apart to get a similar effect. Ideally, I didn’t like doing this because it felt very hacky, and if I could I would opt for fixing the bugs with TextView’s default provided animations. 
+
+There’s a lot more that could be done in terms of rotating along a 3D axis instead of a 2D rotation when putting away a card, which has conflicting issues with also animating offset’s at the same time (there’s a solution to this in the code), but I wanted to keep things 1:1 with the Figma design as much as possible.   Tiny Tweaks - Instead of a black overlay on tap, I added a .colorMultiply effect on to the card while pressing. When animating the black overlay with a simple fade in/out, the overlay shape conformed to the collapsedState but not the expandedState as the card animated into it’s expanded dimensions, which was a slight visual hiccup I wanted to avoid 
+- Friction when dragging anywhere but downwards
+
+Performance
+Could be much better, Apple gave us stronger SwiftUI tools during WWDC25 to measure re-renders and state updates, which would take a bit more time to dig into. But animations are fluid at a consistent 120FPS on ProMotion. Wave doesn’t play nice with Apple’s spring physics, so mixing the two here isn’t ideal, but for the sake of UX I wanted the feel of Wave to showcase what the interaction could feel like at its best. 
